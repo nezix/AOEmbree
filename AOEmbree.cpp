@@ -5,6 +5,10 @@
 
 #include "AOEmbree.h"
 
+#define TINYOBJLOADER_IMPLEMENTATION 
+#include "tiny_obj_loader.h"
+
+# define M_PI 3.14159265358979323846
 
 void errorFunction(void* userPtr, enum RTCError error, const char* str)
 {
@@ -204,7 +208,7 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
 		float x = radius * cos(theta);
 		float y = radius * sin(theta);
 		if (y > 0.0f)//Only keep the upper half of the sphere
-			rayDir.push_back(vec3(x, y, z));
+			rayDir.push_back(normalize(vec3(x, y, z)));
 	}
 
 	float step = 1.0f / samplesAO;
@@ -220,10 +224,7 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
 		quat q = glm::rotation(oriVec, normal);
 
 		for (int s = 0; s < rayDir.size(); s++) {
-			vec3 dir (
-			    rayDir[s].x + vertices[i * 3],
-			    rayDir[s].y + vertices[i * 3 + 1],
-			    rayDir[s].z + vertices[i * 3 + 2]);
+			vec3 dir = rayDir[s];
 
 
 			quat dirq = quat(dir.x, dir.y, dir.z, 0.0f);
@@ -257,44 +258,94 @@ int main(int argc, char **argv) {
 	int samplesAO = 128;
 	float maxDist = 10.0f;
 
-	std::ifstream infile(argv[1]);
+	tinyobj::attrib_t attrib;
+	std::vector<tinyobj::shape_t> shapes;
+	std::vector<tinyobj::material_t> materials;
+
+	std::string warn;
+	std::string err;
+
+	bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, argv[1]);
+
+	if (!warn.empty()) {
+		std::cout << warn << std::endl;
+	}
+
+	if (!err.empty()) {
+		std::cerr << err << std::endl;
+	}
 
 	std::vector<float> verts;
 	std::vector<float> norms;
 	std::vector<int> ids;
 
-	std::string line;
-	while (std::getline(infile, line))
-	{
+	verts = attrib.vertices;
+	norms = attrib.normals;
+	for (int f = 0; f < shapes[0].mesh.num_face_vertices.size(); f++) {
+		size_t index_offset = 0;
+		int fv = shapes[0].mesh.num_face_vertices[f];
 
-		if (line.size() > 0 && line[0] == 'v' && line[1] == ' ') {
-			std::vector<std::string> words;
-			split1(line.c_str(), words);
-			float x = std::stof(words[1]);
-			float y = std::stof(words[2]);
-			float z = std::stof(words[3]);
-			verts.push_back(x);
-			verts.push_back(y);
-			verts.push_back(z);
-		}
-		else if (line.size() > 0 && line[0] == 'f') {
-			std::vector<std::string> words;
-			split1(line.c_str(), words);
-			ids.push_back(std::stoi(words[1]) - 1);
-			ids.push_back(std::stoi(words[2]) - 1);
-			ids.push_back(std::stoi(words[3]) - 1);
-		}
-		if (line.size() > 0 && line[0] == 'v' && line[1] == 'n') {
-			std::vector<std::string> words;
-			split1(line.c_str(), words);
-			float x = std::stof(words[1]);
-			float y = std::stof(words[2]);
-			float z = std::stof(words[3]);
-			norms.push_back(x);
-			norms.push_back(y);
-			norms.push_back(z);
+		for (size_t v = 0; v < fv; v++) {
+			tinyobj::index_t idx = shapes[0].mesh.indices[index_offset + v];
+			ids.push_back(idx.vertex_index-1);
 		}
 	}
+
+
+	//std::ifstream infile(argv[1]);
+
+
+
+	//std::string line;
+	//while (std::getline(infile, line))
+	//{
+
+	//	if (line.size() > 0 && line[0] == 'v' && line[1] == ' ') {
+	//		std::vector<std::string> words;
+	//		split1(line.c_str(), words);
+	//		float x = std::stof(words[1]);
+	//		float y = std::stof(words[2]);
+	//		float z = std::stof(words[3]);
+	//		verts.push_back(x);
+	//		verts.push_back(y);
+	//		verts.push_back(z);
+	//	}
+	//	else if (line.size() > 0 && line[0] == 'f') {
+	//		std::vector<std::string> words;
+	//		split1(line.c_str(), words);
+	//		if (words[0].find("/") != std::string::npos) {
+	//			int a, b, c;
+	//			sscanf(words[0].c_str(), "%d/%d/%d",&a,&b,&c);
+	//			ids.push_back(a - 1);
+
+
+	//			sscanf(words[1].c_str(), "%d/%d/%d", &a, &b, &c);
+	//			ids.push_back(a - 1);
+
+
+	//			sscanf(words[2].c_str(), "%d/%d/%d", &a, &b, &c);
+	//			ids.push_back(a - 1);
+
+
+	//			
+	//		}
+	//		else {
+	//			ids.push_back(std::stoi(words[1]) - 1);
+	//			ids.push_back(std::stoi(words[2]) - 1);
+	//			ids.push_back(std::stoi(words[3]) - 1);
+	//		}
+	//	}
+	//	if (line.size() > 0 && line[0] == 'v' && line[1] == 'n') {
+	//		std::vector<std::string> words;
+	//		split1(line.c_str(), words);
+	//		float x = std::stof(words[1]);
+	//		float y = std::stof(words[2]);
+	//		float z = std::stof(words[3]);
+	//		norms.push_back(x);
+	//		norms.push_back(y);
+	//		norms.push_back(z);
+	//	}
+	//}
 	float *result = new float[verts.size() / 3];
 	computeAOPerVert(verts.data(), norms.data(), ids.data(), result,
 	                 verts.size() / 3, ids.size() / 3,
