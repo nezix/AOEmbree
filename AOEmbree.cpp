@@ -241,7 +241,7 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
 				totalAO += step;
 			}
 		}
-		result[i] = totalAO;
+		result[i] = 1-totalAO;
 	}
 
 	/* Though not strictly necessary in this example, you should
@@ -281,13 +281,17 @@ int main(int argc, char **argv) {
 
 	verts = attrib.vertices;
 	norms = attrib.normals;
-	for (int f = 0; f < shapes[0].mesh.num_face_vertices.size(); f++) {
+	for (int s = 0; s < shapes.size(); s++) {
 		size_t index_offset = 0;
-		int fv = shapes[0].mesh.num_face_vertices[f];
+		for (int f = 0; f < shapes[s].mesh.num_face_vertices.size(); f++) {
+			int fv = shapes[s].mesh.num_face_vertices[f];
 
-		for (size_t v = 0; v < fv; v++) {
-			tinyobj::index_t idx = shapes[0].mesh.indices[index_offset + v];
-			ids.push_back(idx.vertex_index-1);
+			for (size_t v = 0; v < fv; v++) {
+				tinyobj::index_t idx = shapes[s].mesh.indices[index_offset + v];
+				ids.push_back(idx.vertex_index);
+				//std::cout << idx.vertex_index << std::endl;
+			}
+			index_offset += fv;
 		}
 	}
 
