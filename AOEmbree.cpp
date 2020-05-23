@@ -10,6 +10,9 @@
 
 # define M_PI 3.14159265358979323846
 
+#include <chrono> 
+using namespace std::chrono; 
+
 void errorFunction(void* userPtr, enum RTCError error, const char* str)
 {
 	printf("error %d: %s\n", error, str);
@@ -111,28 +114,42 @@ bool castRay(RTCScene scene,
 	 * The user must initialize it properly -- see API documentation
 	 * for rtcIntersect1() for details.
 	 */
-	struct RTCRayHit rayhit;
-	rayhit.ray.org_x = ox;
-	rayhit.ray.org_y = oy;
-	rayhit.ray.org_z = oz;
-	rayhit.ray.dir_x = dx;
-	rayhit.ray.dir_y = dy;
-	rayhit.ray.dir_z = dz;
-	rayhit.ray.tnear = 0;
-	rayhit.ray.tfar = maxDist;
-	rayhit.ray.mask = 0;
-	rayhit.ray.flags = 0;
-	rayhit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
-	rayhit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
+	// struct RTCRayHit rayhit;
+	// rayhit.ray.org_x = ox;
+	// rayhit.ray.org_y = oy;
+	// rayhit.ray.org_z = oz;
+	// rayhit.ray.dir_x = dx;
+	// rayhit.ray.dir_y = dy;
+	// rayhit.ray.dir_z = dz;
+	// rayhit.ray.tnear = 0;
+	// rayhit.ray.tfar = maxDist;
+	// rayhit.ray.mask = 0;
+	// rayhit.ray.flags = 0;
+	// rayhit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
+	// rayhit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
+
+
+	struct RTCRay rayhit;
+	rayhit.org_x = ox;
+	rayhit.org_y = oy;
+	rayhit.org_z = oz;
+	rayhit.dir_x = dx;
+	rayhit.dir_y = dy;
+	rayhit.dir_z = dz;
+	rayhit.tnear = 0.01f;
+	rayhit.tfar = maxDist;
+	rayhit.mask = 0;
+	rayhit.flags = 0;
 
 	/*
 	 * There are multiple variants of rtcIntersect. This one
 	 * intersects a single ray with the scene.
 	 */
-	rtcIntersect1(scene, &context, &rayhit);
+	rtcOccluded1(scene, &context, &rayhit);
 
 	// printf("%f, %f, %f: ", ox, oy, oz);
-	if (rayhit.hit.geomID != RTC_INVALID_GEOMETRY_ID)
+	// if (rayhit.hit.geomID != RTC_INVALID_GEOMETRY_ID)
+	if(rayhit.tfar < 0.0f)
 	{
 		/* Note how geomID and primID identify the geometry we just hit.
 		 * We could use them here to interpolate geometry information,
@@ -172,6 +189,7 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
                       int vcount, int icount,
                       int samplesAO, float maxDist) {
 
+auto timerstart = high_resolution_clock::now();
 
 	RTCDevice device = initializeDevice();
 
@@ -263,13 +281,17 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
 	 * always make sure to release resources allocated through Embree. */
 	rtcReleaseScene(scene);
 	rtcReleaseDevice(device);
+
+	auto timerstop = high_resolution_clock::now();
+	auto duration = duration_cast<milliseconds>(timerstop - timerstart); 
+	fprintf(stderr, "%.3f ms\n", duration);
 }
 
 
 int main(int argc, char **argv) {
 
-	int samplesAO = 256;
-	float maxDist = 1.0e+17f;
+	int samplesAO = 128;
+	float maxDist = 100.0f;
 
 	tinyobj::attrib_t attrib;
 	std::vector<tinyobj::shape_t> shapes;
@@ -308,61 +330,6 @@ int main(int argc, char **argv) {
 		}
 	}
 
-
-	//std::ifstream infile(argv[1]);
-
-
-
-	//std::string line;
-	//while (std::getline(infile, line))
-	//{
-
-	//	if (line.size() > 0 && line[0] == 'v' && line[1] == ' ') {
-	//		std::vector<std::string> words;
-	//		split1(line.c_str(), words);
-	//		float x = std::stof(words[1]);
-	//		float y = std::stof(words[2]);
-	//		float z = std::stof(words[3]);
-	//		verts.push_back(x);
-	//		verts.push_back(y);
-	//		verts.push_back(z);
-	//	}
-	//	else if (line.size() > 0 && line[0] == 'f') {
-	//		std::vector<std::string> words;
-	//		split1(line.c_str(), words);
-	//		if (words[0].find("/") != std::string::npos) {
-	//			int a, b, c;
-	//			sscanf(words[0].c_str(), "%d/%d/%d",&a,&b,&c);
-	//			ids.push_back(a - 1);
-
-
-	//			sscanf(words[1].c_str(), "%d/%d/%d", &a, &b, &c);
-	//			ids.push_back(a - 1);
-
-
-	//			sscanf(words[2].c_str(), "%d/%d/%d", &a, &b, &c);
-	//			ids.push_back(a - 1);
-
-
-	//
-	//		}
-	//		else {
-	//			ids.push_back(std::stoi(words[1]) - 1);
-	//			ids.push_back(std::stoi(words[2]) - 1);
-	//			ids.push_back(std::stoi(words[3]) - 1);
-	//		}
-	//	}
-	//	if (line.size() > 0 && line[0] == 'v' && line[1] == 'n') {
-	//		std::vector<std::string> words;
-	//		split1(line.c_str(), words);
-	//		float x = std::stof(words[1]);
-	//		float y = std::stof(words[2]);
-	//		float z = std::stof(words[3]);
-	//		norms.push_back(x);
-	//		norms.push_back(y);
-	//		norms.push_back(z);
-	//	}
-	//}
 	float *result = new float[verts.size() / 3];
 	computeAOPerVert(verts.data(), norms.data(), ids.data(), result,
 	                 verts.size() / 3, ids.size() / 3,
