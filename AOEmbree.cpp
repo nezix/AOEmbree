@@ -10,8 +10,10 @@
 
 # define M_PI 3.14159265358979323846
 
-#include <chrono> 
-using namespace std::chrono; 
+#include <chrono>
+using namespace std::chrono;
+
+#include <tbb/parallel_for.h>
 
 void errorFunction(void* userPtr, enum RTCError error, const char* str)
 {
@@ -149,7 +151,7 @@ bool castRay(RTCScene scene,
 
 	// printf("%f, %f, %f: ", ox, oy, oz);
 	// if (rayhit.hit.geomID != RTC_INVALID_GEOMETRY_ID)
-	if(rayhit.tfar < 0.0f)
+	if (rayhit.tfar < 0.0f)
 	{
 		/* Note how geomID and primID identify the geometry we just hit.
 		 * We could use them here to interpolate geometry information,
@@ -189,7 +191,7 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
                       int vcount, int icount,
                       int samplesAO, float maxDist) {
 
-auto timerstart = high_resolution_clock::now();
+	auto timerstart = high_resolution_clock::now();
 
 	RTCDevice device = initializeDevice();
 
@@ -240,7 +242,7 @@ auto timerstart = high_resolution_clock::now();
 		float radius = sqrtf(1 - z * z);
 		float y = radius * sin(theta);
 		//Only keep the upper half of the sphere
-		if (y > 0.1f) {
+		if (y > 0.01f) {
 			float x = radius * cos(theta);
 			float y = radius * sin(theta);
 			rayDir.push_back(normalize(vec3(x, y, z)));
@@ -249,33 +251,61 @@ auto timerstart = high_resolution_clock::now();
 
 	float step = 1.0f / samplesAO;
 
-	for (int i = 0 ; i < vcount; i++) {
+	struct RTCIntersectContext context;
+	rtcInitIntersectContext(&context);
 
-		float totalAO = 0.0f;
+	// struct RTCRay rayhit;
+	RTCRay *rays = new RTCRay[rayDir.size()];
 
-		vec3 oriVec(0, 1, 0);
+	// tbb::parallel_for( tbb::blocked_range<int>(0, vcount),
+	                   // [&](tbb::blocked_range<int> r)
+	// {
+		// for (int i = r.begin(); i < r.end(); ++i)
+		for (int i = 0; i < vcount; ++i)
+		{
+			vec3 oriVec(0, 1, 0);
 
-		vec3 normal(norms[i * 3], norms[i * 3 + 1], norms[i * 3 + 2]);
+			vec3 normal(norms[i * 3], norms[i * 3 + 1], norms[i * 3 + 2]);
 
-		quat q = glm::rotation(oriVec, normal);
+			quat q = glm::rotation(oriVec, normal);
 
+			for (int s = 0; s < rayDir.size(); s++) {
+				vec3 dir = rayDir[s];
+				vec3 rotatedDir;
 
-		for (int s = 0; s < rayDir.size(); s++) {
-			vec3 dir = rayDir[s];
-			vec3 rotatedDir;
+				rotate_vector_by_quaternion(dir, q, rotatedDir);
 
-			rotate_vector_by_quaternion(dir, q, rotatedDir);
+				rays[s].org_x = vertices[i * 3];
+				rays[s].org_y = vertices[i * 3 + 1];
+				rays[s].org_z = vertices[i * 3 + 2];
+				rays[s].dir_x = rotatedDir.x;
+				rays[s].dir_y = rotatedDir.y;
+				rays[s].dir_z = rotatedDir.z;
+				rays[s].tnear = 0.01;
+				rays[s].tfar = maxDist;
+				rays[s].mask = 0;
+				rays[s].flags = 0;
 
-			bool inter = castRay(scene, vertices[i * 3], vertices[i * 3 + 1], vertices[i * 3 + 2],
-			                     rotatedDir.x, rotatedDir.y, rotatedDir.z, maxDist);
+				// bool inter = castRay(scene, vertices[i * 3], vertices[i * 3 + 1], vertices[i * 3 + 2],
+				// rotatedDir.x, rotatedDir.y, rotatedDir.z, maxDist);
 
-			if (inter) {
-				totalAO += 1.0f;
+				// if (inter) {
+				// totalAO += 1.0f;
 			}
-		}
-		result[i] = 1.0f - (totalAO / samplesAO);
 
-	}
+			rtcOccluded1M(scene, &context, &rays[0], rayDir.size(), sizeof(RTCRay));
+			// rtcOccluded1(scene, &context, &rayhit);
+			float totalAO = 0.0f;
+
+			for (int s = 0; s < rayDir.size(); s++) {
+				if (rays[s].tfar < 0.0f) {
+					totalAO += 1.0f;
+				}
+			}
+
+			result[i] = 1.0f - (totalAO / samplesAO);
+		}
+	// });
 
 	/* Though not strictly necessary in this example, you should
 	 * always make sure to release resources allocated through Embree. */
@@ -283,8 +313,9 @@ auto timerstart = high_resolution_clock::now();
 	rtcReleaseDevice(device);
 
 	auto timerstop = high_resolution_clock::now();
-	auto duration = duration_cast<milliseconds>(timerstop - timerstart); 
-	fprintf(stderr, "%.3f ms\n", duration);
+	auto duration = duration_cast<milliseconds>(timerstop - timerstart).count();
+// fprintf(stderr, "%.6f ms\n", duration;
+	std::cerr << duration << " ms" << std::endl;
 }
 
 

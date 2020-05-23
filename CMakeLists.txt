@@ -10,14 +10,15 @@ if (POLICY CMP0074)
 endif()
 
 find_package(embree 3.0 REQUIRED)
+find_package(tbb REQUIRED)
 
 INCLUDE_DIRECTORIES(${EMBREE_INCLUDE_DIRS})
 
 add_executable(AOEmbree AOEmbree.cpp)
 
-set(CMAKE_CXX_FLAGS_RELEASE "-O2")
+set(CMAKE_CXX_FLAGS_RELEASE "-Ofast")
 
 target_compile_definitions(AOEmbree PUBLIC NOMINMAX)
-TARGET_LINK_LIBRARIES(AOEmbree ${EMBREE_LIBRARY})
+TARGET_LINK_LIBRARIES(AOEmbree ${EMBREE_LIBRARY} ${TBB_IMPORTED_TARGETS})
 
 
