@@ -5,7 +5,7 @@
 
 #include "AOEmbree.h"
 
-#define TINYOBJLOADER_IMPLEMENTATION 
+#define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
 
 # define M_PI 3.14159265358979323846
@@ -153,6 +153,21 @@ bool castRay(RTCScene scene,
 }
 
 
+void rotate_vector_by_quaternion(const vec3& v, const quat& q, vec3& vprime)
+{
+	// Extract the vector part of the quaternion
+	vec3 u(q.x, q.y, q.z);
+
+	// Extract the scalar part of the quaternion
+	float s = q.w;
+
+	// Do the math
+	vprime = 2.0f * dot(u, v) * u
+	         + (s * s - dot(u, u)) * v
+	         + 2.0f * s * cross(u, v);
+}
+
+
 void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
                       int vcount, int icount,
                       int samplesAO, float maxDist) {
@@ -205,10 +220,13 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
 		float theta = golden_angle * i;
 		float z = start + i * (end - start) / (int)samples;
 		float radius = sqrtf(1 - z * z);
-		float x = radius * cos(theta);
 		float y = radius * sin(theta);
-		if (y > 0.0f)//Only keep the upper half of the sphere
+		//Only keep the upper half of the sphere
+		if (y > 0.1f) {
+			float x = radius * cos(theta);
+			float y = radius * sin(theta);
 			rayDir.push_back(normalize(vec3(x, y, z)));
+		}
 	}
 
 	float step = 1.0f / samplesAO;
@@ -223,40 +241,35 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
 
 		quat q = glm::rotation(oriVec, normal);
 
+
 		for (int s = 0; s < rayDir.size(); s++) {
 			vec3 dir = rayDir[s];
+			vec3 rotatedDir;
 
-
-			quat dirq = quat(dir.x, dir.y, dir.z, 0.0f);
-			quat tmp = q * dirq * conjugate(q);
-			vec3 rotatedDir(tmp.x, tmp.y, tmp.z);
-			rotatedDir = normalize(rotatedDir);
-
+			rotate_vector_by_quaternion(dir, q, rotatedDir);
 
 			bool inter = castRay(scene, vertices[i * 3], vertices[i * 3 + 1], vertices[i * 3 + 2],
 			                     rotatedDir.x, rotatedDir.y, rotatedDir.z, maxDist);
 
-
 			if (inter) {
-				totalAO += step;
+				totalAO += 1.0f;
 			}
 		}
-		result[i] = 1-totalAO;
+		result[i] = 1.0f - (totalAO / samplesAO);
+
 	}
 
 	/* Though not strictly necessary in this example, you should
 	 * always make sure to release resources allocated through Embree. */
 	rtcReleaseScene(scene);
 	rtcReleaseDevice(device);
-
-
-
 }
+
 
 int main(int argc, char **argv) {
 
-	int samplesAO = 128;
-	float maxDist = 10.0f;
+	int samplesAO = 256;
+	float maxDist = 1.0e+17f;
 
 	tinyobj::attrib_t attrib;
 	std::vector<tinyobj::shape_t> shapes;
@@ -331,7 +344,7 @@ int main(int argc, char **argv) {
 	//			ids.push_back(a - 1);
 
 
-	//			
+	//
 	//		}
 	//		else {
 	//			ids.push_back(std::stoi(words[1]) - 1);
