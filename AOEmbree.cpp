@@ -32,71 +32,80 @@ RTCDevice initializeDevice()
 	return device;
 }
 
-RTCScene initializeScene(RTCDevice device)
-{
-	RTCScene scene = rtcNewScene(device);
+static void CalcNormal(float N[3], float v0[3], float v1[3], float v2[3]) {
+	float v10[3];
+	v10[0] = v1[0] - v0[0];
+	v10[1] = v1[1] - v0[1];
+	v10[2] = v1[2] - v0[2];
 
-	/*
-	 * Create a triangle mesh geometry, and initialize a single triangle.
-	 * You can look up geometry types in the API documentation to
-	 * find out which type expects which buffers.
-	 *
-	 * We create buffers directly on the device, but you can also use
-	 * shared buffers. For shared buffers, special care must be taken
-	 * to ensure proper alignment and padding. This is described in
-	 * more detail in the API documentation.
-	 */
-	RTCGeometry geom = rtcNewGeometry(device, RTC_GEOMETRY_TYPE_TRIANGLE);
+	float v20[3];
+	v20[0] = v2[0] - v0[0];
+	v20[1] = v2[1] - v0[1];
+	v20[2] = v2[2] - v0[2];
 
+	N[0] = v10[1] * v20[2] - v10[2] * v20[1];
+	N[1] = v10[2] * v20[0] - v10[0] * v20[2];
+	N[2] = v10[0] * v20[1] - v10[1] * v20[0];
 
-	float* vertices = (float*) rtcSetNewGeometryBuffer(geom,
-	                  RTC_BUFFER_TYPE_VERTEX,
-	                  0,
-	                  RTC_FORMAT_FLOAT3,
-	                  3 * sizeof(float),
-	                  3);
+	float len2 = N[0] * N[0] + N[1] * N[1] + N[2] * N[2];
+	if (len2 > 0.0f) {
+		float len = sqrtf(len2);
 
-	unsigned* indices = (unsigned*) rtcSetNewGeometryBuffer(geom,
-	                    RTC_BUFFER_TYPE_INDEX,
-	                    0,
-	                    RTC_FORMAT_UINT3,
-	                    3 * sizeof(unsigned),
-	                    1);
+		N[0] /= len;
+		N[1] /= len;
+		N[2] /= len;
+	}
+}
 
-	if (vertices && indices)
-	{
-		vertices[0] = 0.f; vertices[1] = 0.f; vertices[2] = 0.f;
-		vertices[3] = 1.f; vertices[4] = 0.f; vertices[5] = 0.f;
-		vertices[6] = 0.f; vertices[7] = 1.f; vertices[8] = 0.f;
+std::vector<float> computeVertexNormals(const tinyobj::attrib_t& attrib, const tinyobj::shape_t& shape) {
 
-		indices[0] = 0; indices[1] = 1; indices[2] = 2;
+	std::vector<float> result;
+	result.reserve(attrib.vertices.size());
+
+	for (int i = 0; i < attrib.vertices.size(); i++) {
+		result.push_back(0.0f);
 	}
 
-	/*
-	 * You must commit geometry objects when you are done setting them up,
-	 * or you will not get any intersections.
-	 */
-	rtcCommitGeometry(geom);
+	for (size_t f = 0; f < shape.mesh.indices.size() / 3; f++) {
+		// Get the three indexes of the face (all faces are triangular)
+		tinyobj::index_t idx0 = shape.mesh.indices[3 * f + 0];
+		tinyobj::index_t idx1 = shape.mesh.indices[3 * f + 1];
+		tinyobj::index_t idx2 = shape.mesh.indices[3 * f + 2];
 
-	/*
-	 * In rtcAttachGeometry(...), the scene takes ownership of the geom
-	 * by increasing its reference count. This means that we don't have
-	 * to hold on to the geom handle, and may release it. The geom object
-	 * will be released automatically when the scene is destroyed.
-	 *
-	 * rtcAttachGeometry() returns a geometry ID. We could use this to
-	 * identify intersected objects later on.
-	 */
-	rtcAttachGeometry(scene, geom);
-	rtcReleaseGeometry(geom);
+		// Get the three vertex indexes and coordinates
+		int vi[3];      // indexes
+		float v[3][3];  // coordinates
 
-	/*
-	 * Like geometry objects, scenes must be committed. This lets
-	 * Embree know that it may start building an acceleration structure.
-	 */
-	rtcCommitScene(scene);
+		for (int k = 0; k < 3; k++) {
+			vi[0] = idx0.vertex_index;
+			vi[1] = idx1.vertex_index;
+			vi[2] = idx2.vertex_index;
+			assert(vi[0] >= 0);
+			assert(vi[1] >= 0);
+			assert(vi[2] >= 0);
 
-	return scene;
+			v[0][k] = attrib.vertices[3 * vi[0] + k];
+			v[1][k] = attrib.vertices[3 * vi[1] + k];
+			v[2][k] = attrib.vertices[3 * vi[2] + k];
+		}
+
+		// Compute the normal of the face
+		float normal[3];
+		CalcNormal(normal, v[0], v[1], v[2]);
+
+		for (size_t i = 0; i < 3; ++i) {
+			vec3 n(result[vi[i] * 3] + normal[0], result[vi[i] * 3 + 1] + normal[1], result[vi[i] * 3 + 2]+ normal[2]);
+
+			n = glm::normalize(n);
+
+			result[vi[i] * 3] = n.x;
+			result[vi[i] * 3 + 1] = n.y;
+			result[vi[i] * 3 + 2] = n.z;
+		}
+	}
+
+	return result;
+
 }
 
 void rotate_vector_by_quaternion(const vec3& v, const quat& q, vec3& vprime)
@@ -265,6 +274,14 @@ int main(int argc, char **argv) {
 
 	verts = attrib.vertices;
 	norms = attrib.normals;
+
+	if (attrib.normals.size() == 0) {
+
+		for (int s = 0; s < shapes.size(); s++) {
+			norms = computeVertexNormals(attrib, shapes[s]);
+		}
+	}
+
 	for (int s = 0; s < shapes.size(); s++) {
 		size_t index_offset = 0;
 		for (int f = 0; f < shapes[s].mesh.num_face_vertices.size(); f++) {
