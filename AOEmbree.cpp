@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <limits>
+#include "cxxopts.hpp"
 
 #include "AOEmbree.h"
 
@@ -14,6 +15,8 @@
 using namespace std::chrono;
 
 #include <tbb/parallel_for.h>
+
+
 
 void errorFunction(void* userPtr, enum RTCError error, const char* str)
 {
@@ -94,7 +97,7 @@ std::vector<float> computeVertexNormals(const tinyobj::attrib_t& attrib, const t
 		CalcNormal(normal, v[0], v[1], v[2]);
 
 		for (size_t i = 0; i < 3; ++i) {
-			vec3 n(result[vi[i] * 3] + normal[0], result[vi[i] * 3 + 1] + normal[1], result[vi[i] * 3 + 2]+ normal[2]);
+			vec3 n(result[vi[i] * 3] + normal[0], result[vi[i] * 3 + 1] + normal[1], result[vi[i] * 3 + 2] + normal[2]);
 
 			n = glm::normalize(n);
 
@@ -248,8 +251,36 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
 
 int main(int argc, char **argv) {
 
-	int samplesAO = 128;
-	float maxDist = 20.0f;
+
+
+	cxxopts::Options options("AOEmbree", "Compute per vertex ambient occlusion using embree");
+
+	options.add_options()
+	("i,input", "OBJ input file", cxxopts::value<std::string>())
+	("s,samples", "Number of ray sample for each vertex", cxxopts::value<int>()->default_value("128"))
+	("d,dist", "Maximum ray distance", cxxopts::value<float>()->default_value("20.0"))
+	("h,help", "Print usage")
+	;
+
+	auto argsresult = options.parse(argc, argv);
+
+	if (argsresult.count("help"))
+	{
+		std::cout << options.help() << std::endl;
+		exit(0);
+	}
+
+	int samplesAO = argsresult["samples"].as<int>();
+	float maxDist = argsresult["dist"].as<float>();
+	std::string path;
+	if (argsresult.count("input"))
+		path = argsresult["input"].as<std::string>();
+	else {
+		std::cout << options.help() << std::endl;
+		exit(0);
+	}
+
+
 
 	tinyobj::attrib_t attrib;
 	std::vector<tinyobj::shape_t> shapes;
@@ -258,7 +289,7 @@ int main(int argc, char **argv) {
 	std::string warn;
 	std::string err;
 
-	bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, argv[1]);
+	bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, path.c_str());
 
 	if (!warn.empty()) {
 		std::cout << warn << std::endl;
@@ -275,15 +306,12 @@ int main(int argc, char **argv) {
 	verts = attrib.vertices;
 	norms = attrib.normals;
 
-	if (attrib.normals.size() == 0) {
-
-		for (int s = 0; s < shapes.size(); s++) {
-			norms = computeVertexNormals(attrib, shapes[s]);
-		}
-	}
-
 	for (int s = 0; s < shapes.size(); s++) {
 		size_t index_offset = 0;
+		if (attrib.normals.size() == 0) {
+			norms = computeVertexNormals(attrib, shapes[s]);
+		}
+
 		for (int f = 0; f < shapes[s].mesh.num_face_vertices.size(); f++) {
 			int fv = shapes[s].mesh.num_face_vertices[f];
 
@@ -293,6 +321,7 @@ int main(int argc, char **argv) {
 			}
 			index_offset += fv;
 		}
+		break;
 	}
 
 	float *result = new float[verts.size() / 3];
