@@ -99,79 +99,6 @@ RTCScene initializeScene(RTCDevice device)
 	return scene;
 }
 
-bool castRay(RTCScene scene,
-             float ox, float oy, float oz,
-             float dx, float dy, float dz, float maxDist)
-{
-	/*
-	 * The intersect context can be used to set intersection
-	 * filters or flags, and it also contains the instance ID stack
-	 * used in multi-level instancing.
-	 */
-	struct RTCIntersectContext context;
-	rtcInitIntersectContext(&context);
-
-	/*
-	 * The ray hit structure holds both the ray and the hit.
-	 * The user must initialize it properly -- see API documentation
-	 * for rtcIntersect1() for details.
-	 */
-	// struct RTCRayHit rayhit;
-	// rayhit.ray.org_x = ox;
-	// rayhit.ray.org_y = oy;
-	// rayhit.ray.org_z = oz;
-	// rayhit.ray.dir_x = dx;
-	// rayhit.ray.dir_y = dy;
-	// rayhit.ray.dir_z = dz;
-	// rayhit.ray.tnear = 0;
-	// rayhit.ray.tfar = maxDist;
-	// rayhit.ray.mask = 0;
-	// rayhit.ray.flags = 0;
-	// rayhit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
-	// rayhit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
-
-
-	struct RTCRay rayhit;
-	rayhit.org_x = ox;
-	rayhit.org_y = oy;
-	rayhit.org_z = oz;
-	rayhit.dir_x = dx;
-	rayhit.dir_y = dy;
-	rayhit.dir_z = dz;
-	rayhit.tnear = 0.01f;
-	rayhit.tfar = maxDist;
-	rayhit.mask = 0;
-	rayhit.flags = 0;
-
-	/*
-	 * There are multiple variants of rtcIntersect. This one
-	 * intersects a single ray with the scene.
-	 */
-	rtcOccluded1(scene, &context, &rayhit);
-
-	// printf("%f, %f, %f: ", ox, oy, oz);
-	// if (rayhit.hit.geomID != RTC_INVALID_GEOMETRY_ID)
-	if (rayhit.tfar < 0.0f)
-	{
-		/* Note how geomID and primID identify the geometry we just hit.
-		 * We could use them here to interpolate geometry information,
-		 * compute shading, etc.
-		 * Since there is only a single triangle in this scene, we will
-		 * get geomID=0 / primID=0 for all hits.
-		 * There is also instID, used for instancing. See
-		 * the instancing tutorials for more information */
-		// printf("Found intersection on geometry %d, primitive %d at tfar=%f\n",
-		//        rayhit.hit.geomID,
-		//        rayhit.hit.primID,
-		//        rayhit.ray.tfar);
-		return true;
-	}
-	return false;
-	// else
-	// printf("Did not find any intersection.\n");
-}
-
-
 void rotate_vector_by_quaternion(const vec3& v, const quat& q, vec3& vprime)
 {
 	// Extract the vector part of the quaternion
@@ -198,7 +125,6 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
 	RTCScene scene = rtcNewScene(device);
 
 	RTCGeometry geom = rtcNewGeometry(device, RTC_GEOMETRY_TYPE_TRIANGLE);
-
 
 	float* vertices = (float*) rtcSetNewGeometryBuffer(geom,
 	                  RTC_BUFFER_TYPE_VERTEX,
@@ -254,14 +180,12 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
 	struct RTCIntersectContext context;
 	rtcInitIntersectContext(&context);
 
-	// struct RTCRay rayhit;
-	RTCRay *rays = new RTCRay[rayDir.size()];
+	tbb::parallel_for( tbb::blocked_range<int>(0, vcount),
+	                   [&](tbb::blocked_range<int> r)
+	{
+		RTCRay *rays = new RTCRay[rayDir.size()];
 
-	// tbb::parallel_for( tbb::blocked_range<int>(0, vcount),
-	                   // [&](tbb::blocked_range<int> r)
-	// {
-		// for (int i = r.begin(); i < r.end(); ++i)
-		for (int i = 0; i < vcount; ++i)
+		for (int i = r.begin(); i < r.end(); ++i)
 		{
 			vec3 oriVec(0, 1, 0);
 
@@ -286,15 +210,10 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
 				rays[s].mask = 0;
 				rays[s].flags = 0;
 
-				// bool inter = castRay(scene, vertices[i * 3], vertices[i * 3 + 1], vertices[i * 3 + 2],
-				// rotatedDir.x, rotatedDir.y, rotatedDir.z, maxDist);
-
-				// if (inter) {
-				// totalAO += 1.0f;
 			}
 
 			rtcOccluded1M(scene, &context, &rays[0], rayDir.size(), sizeof(RTCRay));
-			// rtcOccluded1(scene, &context, &rayhit);
+
 			float totalAO = 0.0f;
 
 			for (int s = 0; s < rayDir.size(); s++) {
@@ -305,7 +224,7 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
 
 			result[i] = 1.0f - (totalAO / samplesAO);
 		}
-	// });
+	});
 
 	/* Though not strictly necessary in this example, you should
 	 * always make sure to release resources allocated through Embree. */
@@ -314,7 +233,6 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
 
 	auto timerstop = high_resolution_clock::now();
 	auto duration = duration_cast<milliseconds>(timerstop - timerstart).count();
-// fprintf(stderr, "%.6f ms\n", duration;
 	std::cerr << duration << " ms" << std::endl;
 }
 
@@ -322,7 +240,7 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
 int main(int argc, char **argv) {
 
 	int samplesAO = 128;
-	float maxDist = 100.0f;
+	float maxDist = 20.0f;
 
 	tinyobj::attrib_t attrib;
 	std::vector<tinyobj::shape_t> shapes;
@@ -355,7 +273,6 @@ int main(int argc, char **argv) {
 			for (size_t v = 0; v < fv; v++) {
 				tinyobj::index_t idx = shapes[s].mesh.indices[index_offset + v];
 				ids.push_back(idx.vertex_index);
-				//std::cout << idx.vertex_index << std::endl;
 			}
 			index_offset += fv;
 		}
@@ -370,6 +287,8 @@ int main(int argc, char **argv) {
 	for (int i = 0; i < verts.size() / 3; i++) {
 		printf("v %.6f %.6f %.6f %.3f %.3f %.3f\n",
 		       verts[i * 3], verts[i * 3 + 1], verts[i * 3 + 2], result[i], result[i], result[i]);
+		printf("vn %.6f %.6f %.6f\n", norms[i * 3], norms[i * 3 + 1], norms[i * 3 + 2]);
+
 	}
 
 	for (int i = 0; i < ids.size() / 3; i++) {
