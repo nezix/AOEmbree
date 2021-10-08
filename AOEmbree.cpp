@@ -16,6 +16,7 @@ using namespace std::chrono;
 
 #include <tbb/parallel_for.h>
 
+#define DEBUG 0
 
 
 void errorFunction(void* userPtr, enum RTCError error, const char* str)
@@ -111,26 +112,13 @@ std::vector<float> computeVertexNormals(const tinyobj::attrib_t& attrib, const t
 
 }
 
-void rotate_vector_by_quaternion(const vec3& v, const quat& q, vec3& vprime)
-{
-    // Extract the vector part of the quaternion
-    vec3 u(q.x, q.y, q.z);
-
-    // Extract the scalar part of the quaternion
-    float s = q.w;
-
-    // Do the math
-    vprime = 2.0f * dot(u, v) * u
-             + (s * s - dot(u, u)) * v
-             + 2.0f * s * cross(u, v);
-}
-
-
 void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
                       int vcount, int icount,
                       int samplesAO, float maxDist) {
 
+#if DEBUG
     auto timerstart = high_resolution_clock::now();
+#endif
 
     RTCDevice device = initializeDevice();
 
@@ -182,7 +170,6 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
         //Only keep the upper half of the sphere
         if (y > 0.01f) {
             float x = radius * cos(theta);
-            float y = radius * sin(theta);
             rayDir.push_back(normalize(vec3(x, y, z)));
         }
     }
@@ -203,13 +190,12 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
 
             vec3 normal(norms[i * 3], norms[i * 3 + 1], norms[i * 3 + 2]);
 
-            quat q = glm::rotation(oriVec, normal);
+            quat q = glm::rotation(oriVec, normalize(normal));
 
             for (int s = 0; s < rayDir.size(); s++) {
                 vec3 dir = rayDir[s];
-                vec3 rotatedDir;
 
-                rotate_vector_by_quaternion(dir, q, rotatedDir);
+                vec3 rotatedDir = q * dir;
 
                 rays[s].org_x = vertices[i * 3];
                 rays[s].org_y = vertices[i * 3 + 1];
@@ -217,7 +203,7 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
                 rays[s].dir_x = rotatedDir.x;
                 rays[s].dir_y = rotatedDir.y;
                 rays[s].dir_z = rotatedDir.z;
-                rays[s].tnear = 0.01;
+                rays[s].tnear = 0.01f;
                 rays[s].tfar = maxDist;
                 rays[s].mask = 0;
                 rays[s].flags = 0;
@@ -229,12 +215,12 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
             float totalAO = 0.0f;
 
             for (int s = 0; s < rayDir.size(); s++) {
-                if (rays[s].tfar < 0.0f) {
+                if (rays[s].tfar < 0.0f) {//Hit
                     totalAO += 1.0f;
                 }
             }
 
-            result[i] = 1.0f - (totalAO / samplesAO);
+            result[i] = 1.0f - (totalAO / rayDir.size());
         }
     });
 
@@ -243,9 +229,11 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
     rtcReleaseScene(scene);
     rtcReleaseDevice(device);
 
+#if DEBUG
     auto timerstop = high_resolution_clock::now();
     auto duration = duration_cast<milliseconds>(timerstop - timerstart).count();
     std::cerr << duration << " ms" << std::endl;
+#endif
 }
 
 
