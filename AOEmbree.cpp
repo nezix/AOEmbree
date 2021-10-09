@@ -168,7 +168,7 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
         float radius = sqrtf(1 - z * z);
         float y = radius * sin(theta);
         //Only keep the upper half of the sphere
-        if (y > 0.01f) {
+        if (z > 0.01f) {
             float x = radius * cos(theta);
             rayDir.push_back(normalize(vec3(x, y, z)));
         }
@@ -186,7 +186,7 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
 
         for (int i = r.begin(); i < r.end(); ++i)
         {
-            vec3 oriVec(0, 1, 0);
+            vec3 oriVec(0, 0, 1);
 
             vec3 normal(norms[i * 3], norms[i * 3 + 1], norms[i * 3 + 2]);
 
