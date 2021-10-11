@@ -243,12 +243,14 @@ int main(int argc, char **argv) {
 
     cxxopts::Options options("AOEmbree", "Compute per vertex ambient occlusion using embree");
 
-    bool onlyAO = false;
+    bool only_AO = false;
+    bool force_normals = false;
     options.add_options()
     ("i,input", "OBJ input file", cxxopts::value<std::string>())
     ("s,samples", "Number of ray sample for each vertex", cxxopts::value<int>()->default_value("128"))
     ("d,dist", "Maximum ray distance", cxxopts::value<float>()->default_value("20.0"))
-    ("a,ao", "Only output per vertex AO values", cxxopts::value<bool>(onlyAO))
+    ("a,ao", "Only output per vertex AO values", cxxopts::value<bool>(only_AO))
+    ("n,normals", "Recompute mesh normals", cxxopts::value<bool>(force_normals))
     ("h,help", "Print usage")
     ;
 
@@ -297,7 +299,7 @@ int main(int argc, char **argv) {
 
     for (int s = 0; s < shapes.size(); s++) {
         size_t index_offset = 0;
-        if (attrib.normals.size() == 0) {
+        if (attrib.normals.size() == 0 || force_normals) {
             norms = computeVertexNormals(attrib, shapes[s]);
         }
 
@@ -318,7 +320,7 @@ int main(int argc, char **argv) {
                      verts.size() / 3, ids.size() / 3,
                      samplesAO, maxDist);
 
-    if (onlyAO) {
+    if (only_AO) {
         for (int i = 0; i < verts.size() / 3; i++) {
             printf("%.3f ", result[i]);
         }
