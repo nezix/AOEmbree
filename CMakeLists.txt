@@ -1,25 +1,19 @@
-cmake_minimum_required(VERSION 3.30)
+cmake_minimum_required(VERSION 3.10)
 project(AOEmbree)
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 14)
 
 set(CMAKE_BUILD_TYPE Release)
-
 
 if (POLICY CMP0074)
   cmake_policy(SET CMP0074 NEW)
 endif()
 
-find_package(embree 4.3.3 REQUIRED)
+find_package(embree REQUIRED)
 find_package(tbb REQUIRED)
 
-INCLUDE_DIRECTORIES(${EMBREE_INCLUDE_DIRS})
-
 add_executable(AOEmbree AOEmbree.cpp)
+TARGET_LINK_LIBRARIES(AOEmbree embree)
+TARGET_LINK_LIBRARIES(AOEmbree tbb)
 
-set(CMAKE_CXX_FLAGS_RELEASE "-Ofast")
-set(CMAKE_C_FLAGS_RELEASE "-Ofast")
-
-target_compile_definitions(AOEmbree PUBLIC NOMINMAX)
-TARGET_LINK_LIBRARIES(AOEmbree ${EMBREE_LIBRARY} ${TBB_IMPORTED_TARGETS})
-
-
+set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+set(CMAKE_C_FLAGS_RELEASE "-O3")
