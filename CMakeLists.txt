@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.30)
 project(AOEmbree)
 set(CMAKE_CXX_STANDARD 11)
 
@@ -9,7 +9,7 @@ if (POLICY CMP0074)
   cmake_policy(SET CMP0074 NEW)
 endif()
 
-find_package(embree 3.0 REQUIRED)
+find_package(embree 4.3.3 REQUIRED)
 find_package(tbb REQUIRED)
 
 INCLUDE_DIRECTORIES(${EMBREE_INCLUDE_DIRS})

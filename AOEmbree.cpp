@@ -1,4 +1,3 @@
-#include <embree3/rtcore.h>
 #include <stdio.h>
 #include <math.h>
 #include <limits>
@@ -184,13 +183,9 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
 
     float step = 1.0f / samplesAO;
 
-    struct RTCIntersectContext context;
-    rtcInitIntersectContext(&context);
-
-    tbb::parallel_for(tbb::blocked_range<int>(0, vcount),
-                      [&](tbb::blocked_range<int> r)
+    tbb::parallel_for(tbb::blocked_range<int>(0, vcount), [&](tbb::blocked_range<int> r)
                       {
-                          RTCRay *rays = new RTCRay[rayDir.size()];
+                          RTCRayHit *rays = new RTCRayHit[rayDir.size()];
 
                           for (int i = r.begin(); i < r.end(); ++i)
                           {
@@ -206,33 +201,37 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
 
                                   vec3 rotatedDir = q * dir;
 
-                                  rays[s].org_x = vertices[i * 3];
-                                  rays[s].org_y = vertices[i * 3 + 1];
-                                  rays[s].org_z = vertices[i * 3 + 2];
-                                  rays[s].dir_x = rotatedDir.x;
-                                  rays[s].dir_y = rotatedDir.y;
-                                  rays[s].dir_z = rotatedDir.z;
-                                  rays[s].tnear = 0.01f;
-                                  rays[s].tfar = maxDist;
-                                  rays[s].mask = 0;
-                                  rays[s].flags = 0;
+                                  rays[s].ray.org_x = vertices[i * 3];
+                                  rays[s].ray.org_y = vertices[i * 3 + 1];
+                                  rays[s].ray.org_z = vertices[i * 3 + 2];
+                                  rays[s].ray.dir_x = rotatedDir.x;
+                                  rays[s].ray.dir_y = rotatedDir.y;
+                                  rays[s].ray.dir_z = rotatedDir.z;
+                                  rays[s].ray.tnear = 0.01f;
+                                  rays[s].ray.tfar = maxDist;
+                                  rays[s].ray.mask = -1;
+                                  rays[s].ray.flags = 0;
+                                  rays[s].hit.geomID = RTC_INVALID_GEOMETRY_ID;
+                                  rays[s].hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
                               }
-
-                              rtcOccluded1M(scene, &context, &rays[0], rayDir.size(), sizeof(RTCRay));
-
-                              float totalAO = 0.0f;
 
                               for (int s = 0; s < rayDir.size(); s++)
                               {
-                                  if (rays[s].tfar < 0.0f)
+                                  rtcIntersect1(scene, &rays[s]);
+                              }
+
+                              int totalAO = 0;
+
+                              for (int s = 0; s < rayDir.size(); s++)
+                              {
+                                  if (rays[s].hit.geomID != RTC_INVALID_GEOMETRY_ID)
                                   { // Hit
-                                      totalAO += 1.0f;
+                                      totalAO++;
                                   }
                               }
 
-                              result[i] = 1.0f - (totalAO / rayDir.size());
-                          }
-                      });
+                              result[i] = 1.0f - ((float)totalAO / rayDir.size());
+                          } });
 
     /* Though not strictly necessary in this example, you should
      * always make sure to release resources allocated through Embree. */
@@ -255,14 +254,7 @@ int main(int argc, char **argv)
     bool force_normals = false;
     bool output_to_file = false;
 
-    options.add_options()
-    ("i,input", "OBJ input file", cxxopts::value<std::string>())
-    ("s,samples", "Number of ray sample for each vertex", cxxopts::value<int>()->default_value("128"))
-    ("d,dist", "Maximum ray distance", cxxopts::value<float>()->default_value("20.0"))
-    ("a,ao", "Only output per vertex AO values", cxxopts::value<bool>(only_AO)->default_value("false"))
-    ("o,output", "Output file", cxxopts::value<std::string>())
-    ("n,normals", "Recompute mesh normals", cxxopts::value<bool>(force_normals))
-    ("h,help", "Print usage");
+    options.add_options()("i,input", "OBJ input file", cxxopts::value<std::string>())("s,samples", "Number of ray sample for each vertex", cxxopts::value<int>()->default_value("128"))("d,dist", "Maximum ray distance", cxxopts::value<float>()->default_value("20.0"))("a,ao", "Only output per vertex AO values", cxxopts::value<bool>(only_AO)->default_value("false"))("o,output", "Output file", cxxopts::value<std::string>())("n,normals", "Recompute mesh normals", cxxopts::value<bool>(force_normals))("h,help", "Print usage");
 
     auto argsresult = options.parse(argc, argv);
 
@@ -291,7 +283,6 @@ int main(int argc, char **argv)
         outpath = argsresult["output"].as<std::string>();
     }
 
-    
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
     std::vector<tinyobj::material_t> materials;

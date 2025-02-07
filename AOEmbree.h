@@ -1,5 +1,5 @@
 #include <vector>
-#include <embree3/rtcore.h>
+#include <embree4/rtcore.h>
 
 #include <fstream>
 #include <sstream>
