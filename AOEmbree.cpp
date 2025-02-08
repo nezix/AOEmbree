@@ -2,7 +2,7 @@
 #include <math.h>
 #include <limits>
 #include "cxxopts.hpp"
-#include <omp.h>
+#include <tbb/parallel_for.h>
 
 #include "AOEmbree.h"
 
@@ -146,8 +146,9 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
 
     float step = 1.0f / samplesAO;
 
-    #pragma omp parallel for
-    for (int i = 0; i < vertexCount; ++i)
+    tbb::parallel_for(tbb::blocked_range<int>(0, vertexCount), [&](tbb::blocked_range<int> r)
+                      {
+    for (int i = r.begin(); i < r.end(); ++i)
     {
         vec3 oriVec(0, 0, 1);
 
@@ -179,7 +180,7 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
         }
 
         result[i] = 1.0f - ((float)totalAO / rayDir.size());
-    }
+    } });
 
 #if DEBUG
     auto timerstop = high_resolution_clock::now();
