@@ -2,6 +2,7 @@
 #include <math.h>
 #include <limits>
 #include "cxxopts.hpp"
+#include <omp.h>
 
 #include "AOEmbree.h"
 
@@ -13,25 +14,7 @@
 #include <chrono>
 using namespace std::chrono;
 
-#include <tbb/parallel_for.h>
-
 #define DEBUG 0
-
-void errorFunction(void *userPtr, enum RTCError error, const char *str)
-{
-    printf("error %d: %s\n", error, str);
-}
-
-RTCDevice initializeDevice()
-{
-    RTCDevice device = rtcNewDevice(NULL);
-
-    if (!device)
-        printf("error %d: cannot create device\n", rtcGetDeviceError(NULL));
-
-    rtcSetDeviceErrorFunction(device, errorFunction, NULL);
-    return device;
-}
 
 static void CalcNormal(float N[3], float v0[3], float v1[3], float v2[3])
 {
@@ -116,48 +99,13 @@ std::vector<float> computeVertexNormals(const tinyobj::attrib_t &attrib, const t
 }
 
 void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
-                      int vcount, int icount,
+                      int vertexCount, int triangleCount,
                       int samplesAO, float maxDist)
 {
 
 #if DEBUG
     auto timerstart = high_resolution_clock::now();
 #endif
-
-    RTCDevice device = initializeDevice();
-
-    RTCScene scene = rtcNewScene(device);
-
-    RTCGeometry geom = rtcNewGeometry(device, RTC_GEOMETRY_TYPE_TRIANGLE);
-
-    float *vertices = (float *)rtcSetNewGeometryBuffer(geom,
-                                                       RTC_BUFFER_TYPE_VERTEX,
-                                                       0,
-                                                       RTC_FORMAT_FLOAT3,
-                                                       3 * sizeof(float),
-                                                       vcount);
-
-    unsigned *indices = (unsigned *)rtcSetNewGeometryBuffer(geom,
-                                                            RTC_BUFFER_TYPE_INDEX,
-                                                            0,
-                                                            RTC_FORMAT_UINT3,
-                                                            3 * sizeof(unsigned),
-                                                            icount);
-
-    for (int i = 0; i < vcount * 3; i++)
-    {
-        vertices[i] = verts[i];
-    }
-    for (int i = 0; i < icount * 3; i++)
-    {
-        indices[i] = tris[i];
-    }
-
-    rtcCommitGeometry(geom);
-    rtcAttachGeometry(scene, geom);
-    rtcReleaseGeometry(geom);
-
-    rtcCommitScene(scene);
 
     std::vector<vec3> rayDir;
 
@@ -181,62 +129,57 @@ void computeAOPerVert(float *verts, float *norms, int *tris, float *result,
         }
     }
 
+    // Build BVH
+    tinybvh::BVH bvh;
+    tinybvh::bvhvec4 *meshVertices = new tinybvh::bvhvec4[vertexCount];
+
+    for (int i = 0; i < vertexCount; i++)
+    {
+        tinybvh::bvhvec4 &v0 = meshVertices[i];
+
+        v0.x = verts[i * 3 + 0];
+        v0.y = verts[i * 3 + 1];
+        v0.z = verts[i * 3 + 2];
+    }
+
+    bvh.Build(meshVertices, (uint32_t *)tris, triangleCount);
+
     float step = 1.0f / samplesAO;
 
-    tbb::parallel_for(tbb::blocked_range<int>(0, vcount), [&](tbb::blocked_range<int> r)
-                      {
-                          RTCRayHit *rays = new RTCRayHit[rayDir.size()];
+    #pragma omp parallel for
+    for (int i = 0; i < vertexCount; ++i)
+    {
+        vec3 oriVec(0, 0, 1);
 
-                          for (int i = r.begin(); i < r.end(); ++i)
-                          {
-                              vec3 oriVec(0, 0, 1);
+        vec3 normal(norms[i * 3], norms[i * 3 + 1], norms[i * 3 + 2]);
 
-                              vec3 normal(norms[i * 3], norms[i * 3 + 1], norms[i * 3 + 2]);
+        quat q = glm::rotation(oriVec, normalize(normal));
 
-                              quat q = glm::rotation(oriVec, normalize(normal));
+        int totalAO = 0;
 
-                              for (int s = 0; s < rayDir.size(); s++)
-                              {
-                                  vec3 dir = rayDir[s];
+        for (int s = 0; s < rayDir.size(); s++)
+        {
+            vec3 dir = rayDir[s];
 
-                                  vec3 rotatedDir = q * dir;
+            vec3 rotatedDir = q * dir;
 
-                                  rays[s].ray.org_x = vertices[i * 3];
-                                  rays[s].ray.org_y = vertices[i * 3 + 1];
-                                  rays[s].ray.org_z = vertices[i * 3 + 2];
-                                  rays[s].ray.dir_x = rotatedDir.x;
-                                  rays[s].ray.dir_y = rotatedDir.y;
-                                  rays[s].ray.dir_z = rotatedDir.z;
-                                  rays[s].ray.tnear = 0.01f;
-                                  rays[s].ray.tfar = maxDist;
-                                  rays[s].ray.mask = -1;
-                                  rays[s].ray.flags = 0;
-                                  rays[s].hit.geomID = RTC_INVALID_GEOMETRY_ID;
-                                  rays[s].hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
-                              }
+            tinybvh::bvhvec3 direction(rotatedDir.x, rotatedDir.y, rotatedDir.z);
+            tinybvh::bvhvec3 origin(verts[i * 3], verts[i * 3 + 1], verts[i * 3 + 2]);
 
-                              for (int s = 0; s < rayDir.size(); s++)
-                              {
-                                  rtcIntersect1(scene, &rays[s]);
-                              }
+            tinybvh::bvhvec3 normalTiny(direction.x, direction.y, direction.z);
 
-                              int totalAO = 0;
+            origin += tinybvh_normalize(normalTiny) * 0.01f;
 
-                              for (int s = 0; s < rayDir.size(); s++)
-                              {
-                                  if (rays[s].hit.geomID != RTC_INVALID_GEOMETRY_ID)
-                                  { // Hit
-                                      totalAO++;
-                                  }
-                              }
+            tinybvh::Ray ray(origin, direction, maxDist);
 
-                              result[i] = 1.0f - ((float)totalAO / rayDir.size());
-                          } });
+            if (bvh.IsOccluded(ray))
+            {
+                totalAO++;
+            }
+        }
 
-    /* Though not strictly necessary in this example, you should
-     * always make sure to release resources allocated through Embree. */
-    rtcReleaseScene(scene);
-    rtcReleaseDevice(device);
+        result[i] = 1.0f - ((float)totalAO / rayDir.size());
+    }
 
 #if DEBUG
     auto timerstop = high_resolution_clock::now();

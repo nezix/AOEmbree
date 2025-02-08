@@ -1,6 +1,4 @@
 #include <vector>
-#include <embree4/rtcore.h>
-
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -14,13 +12,8 @@
 #include "glm/gtx/quaternion.hpp"
 using namespace glm;
 
-// struct float3
-// {
-// 	float x;
-// 	float y;
-// 	float z;
-// };
-
+#define TINYBVH_IMPLEMENTATION
+#include "tinybvh/tiny_bvh.h"
 
 void computeAOPerVert(float *vertices, float *normals, int *indices, float *result,
                       int vcount, int icount,
