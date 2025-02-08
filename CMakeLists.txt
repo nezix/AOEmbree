@@ -9,11 +9,12 @@ if (POLICY CMP0074)
 endif()
 
 find_package(embree REQUIRED)
-find_package(tbb REQUIRED)
+find_package(TBB REQUIRED)
 
-add_executable(AOEmbree AOEmbree.cpp)
+ADD_EXECUTABLE(AOEmbree AOEmbree.cpp)
 TARGET_LINK_LIBRARIES(AOEmbree embree)
-TARGET_LINK_LIBRARIES(AOEmbree tbb)
+TARGET_LINK_LIBRARIES(AOEmbree TBB::tbb)
+
 
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 set(CMAKE_C_FLAGS_RELEASE "-O3")
