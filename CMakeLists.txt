@@ -22,4 +22,10 @@ set(CMAKE_C_FLAGS_RELEASE "-Ofast")
 target_compile_definitions(AOEmbree PUBLIC NOMINMAX)
 TARGET_LINK_LIBRARIES(AOEmbree ${EMBREE_LIBRARY} ${TBB_IMPORTED_TARGETS})
 
-
+# Make sure to use local .so/dll files
+if(UNIX AND NOT APPLE)
+  set_target_properties(AOEmbree PROPERTIES
+      BUILD_RPATH "$ORIGIN"
+      LINK_FLAGS "-Wl,--disable-new-dtags"
+  )
+endif()
